@@ -24,25 +24,41 @@ app.get('/films/:id/recommendations', getFilmRecommendations);
 function getFilmRecommendations(req, res) {
   let filmId = req.params.id;
   let reviewsUrl = `${REVIEWS_URL}${filmId}`;
-  //take film id and need to query third party api for reviews
+  //take film id and retrieve genreId
+  //locate all films with genreId
+  //getReviews for these films with matching genreId
   //structure reviews
-  getGenreByFilmId(filmId)
-    .then(genre => genre);
-  getReviews(reviewsUrl)
-    .then(reviews => console.log(reviews))
-  let response = {recommendations: [], meta: {limit: 10, offset: 0}}
-  res.status(200).json({response})
+  getGenreIdByFilmId(filmId)
+    .then(genreId => res.json({data: genreId}));
+  // getReviews(reviewsUrl)
+  //   .then(reviews => console.log(reviews))
+  // res.status(200).json({recommendations: [], meta: { limit: 10, offset: 0 }})
 }
 
-function getGenreByFilmId(id) {
+              // id: 7406,
+              // title: 'Agent Deathstroke Teacher',
+              // releaseDate: '2001-10-19',
+              // genre: 'Western',
+              // averageRating: 4.6,
+              // reviews: 5,
+
+function getGenreIdByFilmId(id) {
   return DB.then(db =>
-    db.get("SELECT name from genres left join films on films.genre_id = genres.id where films.id = $id",
-      {
-        $id: id
-      }
-    )
-  ).then(genre => genre.name);
+    db.all('SELECT films.id, title, release_date as releaseDate, genres.name FROM films INNER JOIN genres ON films.genre_id = genres.id  AND genres.id = (SELECT genre_id from genres INNER JOIN films where films.id = $id) AND films.id <> $id', {
+      $id: id
+    }))
+    .then(data => {
+      console.log(data);
+      return data;
+    })
 }
+// "SELECT id from genres left join films on films.genre_id = genres.id where films.id = $id", {
+//       $id: id
+
+function getAllFilmsByGenreId(genreId) {
+  return DB.then(db => db.get('SELECT * from films'))
+}
+
 
 function getReviews(url) {
   return new Promise((resolve, reject) => {
