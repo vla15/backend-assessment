@@ -34,14 +34,17 @@ sequelize.authenticate().then(() => console.log("Successfully connected"));
 
 // ROUTES
 app.get('/films/:id/recommendations', getFilmRecommendations);
+app.get('*', function(req, res) {
+  res.status(404).send({ message: '"message" key missing' });
+})
 
 // ROUTE HANDLER
 function getFilmRecommendations(req, res) {
   let filmId = req.params.id;
+  let limit = req.query.limit || 10;
   getFilmDetails(filmId)
-    .then(filterByReleaseDate)
-    // .then(getFilmReviews)
-    .then(result => res.status(200).json({recommendations: result, meta: { limit: 10, offset: 0 }}));
+    .then(films => filterByReleaseDate(films, limit))
+    .then(result => res.status(200).json({recommendations: result, meta: { limit: limit, offset: 0 }}));
 }
 
 
@@ -60,36 +63,32 @@ function getFilmDetails(id) {
     .then(genre => genre[0]);
 }
 
-function filterByReleaseDate(data) {
+function filterByReleaseDate(data, limit) {
   let recommendedFilms = []
-  let limitTracker = 100000;
   let offsetTracker = 0;
-  function getRecommendedFilms(genre, limit, offset) {
+  function getRecommendedFilms(genre) {
     return new Promise((resolve, reject) => {
-      getByReleaseDate(genre, limit, offset)
+      getByReleaseDate(genre)
         .then(films => getFilmReviews(films, genre))
-        .then(results => resolve(results))
+        .then(results => resolve(results.slice(0, limit)))
         .catch(err => resolve(recommendedFilms));
     })
   }
-  return getRecommendedFilms(data, limitTracker, offsetTracker)
+  return getRecommendedFilms(data, offsetTracker)
 }
 
-function getByReleaseDate(film, limit = 10, offset) {
+function getByReleaseDate(film) {
   return sequelize
     .query(
       `SELECT films.id, title, release_date as releaseDate
       FROM films WHERE genre_id = :genreId
       AND (strftime(release_date) + 0)
-      BETWEEN (:releaseDate - 15) AND (:releaseDate + 15)
-      LIMIT :limit OFFSET :offset`,
+      BETWEEN (:releaseDate - 15) AND (:releaseDate + 15)`,
       {
         raw: true,
         replacements: {
           genreId: film.genre_id,
-          releaseDate: film.release_date,
-          limit: limit,
-          offset: offset
+          releaseDate: film.release_date
         },
         type: sequelize.QueryTypes.SELECT
       }
@@ -104,7 +103,7 @@ function getFilmReviews(films, genre) {
     films.forEach(film => {
       url += `${film.id.toString()},`;
       data[film.id] = film;
-      data[film.id]['name'] = name;
+      data[film.id]['genre'] = name;
     })
     url = url.substring(0, url.length - 1);
     return axios.get(`${REVIEWS_URL}${url}`)
@@ -127,7 +126,10 @@ function getRatingData(filmReviews) {
   };
   let averageRating = parseFloat(filmReviews.reviews.reduce((score, film) => score + film.rating, 0) / reviews).toFixed(2);
   if (parseFloat(averageRating) >= 4.0) {
-    //return it as {id: {reviews, averageRating}}
+    let len = averageRating.toString().length - 1;
+    if (averageRating.toString()[len] === '0') {
+      averageRating = parseFloat(averageRating).toFixed(1);
+    }
     return { id, reviews, averageRating };
   } else {
     return;
