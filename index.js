@@ -5,10 +5,10 @@ const sqlite = require('sqlite'),
       axios = require('axios'),
       app = express();
 
-const { PORT=3000, NODE_ENV='development', DB_PATH='./db/database.db' } = process.env;
+const { PORT=3000, NODE_ENV='development', DB_PATH='./db/database.db', RDS_HOSTNAME ='localhost' } = process.env;
 //SETUP DB
 const SEQUELIZE = new Sequelize('films', 'root', 'root', {
-  host: 'localhost',
+  host: RDS_HOSTNAME,
   dialect: 'sqlite',
   operatorsAliases: false,
   pool: {
