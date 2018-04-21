@@ -34,22 +34,37 @@ sequelize.authenticate().then(() => console.log("Successfully connected"));
 
 // ROUTES
 app.get('/films/:id/recommendations', getFilmRecommendations);
-app.get('*', function(req, res) {
-  res.status(404).send({ message: '"message" key missing' });
-})
+app.use(handleRouteError);
 
 // ROUTE HANDLER
-function getFilmRecommendations(req, res) {
+function getFilmRecommendations(req, res, next) {
   let filmId = req.params.id;
   let limit = req.query.limit || 10;
-  getFilmDetails(filmId)
-    .then(films => filterByReleaseDate(films, limit))
-    .then(result => res.status(200).json({recommendations: result, meta: { limit: limit, offset: 0 }}));
+  let offset = req.query.offset || 0;
+  getFilmDetailsQuery(filmId)
+    .then(films => filterFilmsByReleaseDate(films, limit, offset))
+    .then(result => res.status(200).json({recommendations: result, meta: { limit, offset }}))
+    .catch(err => {
+      res.errorStatus = 422;
+      next()
+    })
 }
 
+function handleRouteError(req, res, next) {
+  let errorStatus = res.errorStatus || 404;
+  res.status(errorStatus).send({ message: '"message" key missing' });
+}
 
+function filterFilmsByReleaseDate(data, limit, offset) {
+  return getByReleaseDateQuery(data)
+    .then(films => getFilmReviews(films, data))
+    .then(results => results.slice(offset, limit))
+    .catch(err => {
+      throw err
+    });
+}
 
-function getFilmDetails(id) {
+function getFilmDetailsQuery(id) {
   return sequelize
     .query(
       `SELECT strftime(release_date) + 0 as release_date, genre_id, genres.name
@@ -60,24 +75,13 @@ function getFilmDetails(id) {
         type: sequelize.QueryTypes.SELECT
       }
     )
-    .then(genre => genre[0]);
+    .then(genre => genre[0])
+    .catch(err => {
+      throw err
+    });
 }
 
-function filterByReleaseDate(data, limit) {
-  let recommendedFilms = []
-  let offsetTracker = 0;
-  function getRecommendedFilms(genre) {
-    return new Promise((resolve, reject) => {
-      getByReleaseDate(genre)
-        .then(films => getFilmReviews(films, genre))
-        .then(results => resolve(results.slice(0, limit)))
-        .catch(err => resolve(recommendedFilms));
-    })
-  }
-  return getRecommendedFilms(data, offsetTracker)
-}
-
-function getByReleaseDate(film) {
+function getByReleaseDateQuery(film) {
   return sequelize
     .query(
       `SELECT films.id, title, release_date as releaseDate
@@ -93,32 +97,39 @@ function getByReleaseDate(film) {
         type: sequelize.QueryTypes.SELECT
       }
     )
+    .catch(err => {
+      throw err
+    });
 }
 
 function getFilmReviews(films, genre) {
-    let { name } = genre;
-    let url = '';
-    let data = {}
-    let recommendedFilms = [];
-    films.forEach(film => {
-      url += `${film.id.toString()},`;
-      data[film.id] = film;
-      data[film.id]['genre'] = name;
+  let { name } = genre;
+  let url = '';
+  let data = {};
+  let recommendedFilms = [];
+  films.forEach(film => {
+    url += `${film.id.toString()},`;
+    data[film.id] = film;
+    data[film.id]['genre'] = name;
+  })
+  url = url.substring(0, url.length - 1);
+  return axios
+    .get(`${REVIEWS_URL}${url}`)
+    .then(reviews => {
+      reviews.data.map(formatReviewData).forEach(review => {
+        if (review) {
+          let merge = Object.assign(data[review.id], review)
+          recommendedFilms.push(data[review.id]);
+        }
+      });
+      return recommendedFilms;
     })
-    url = url.substring(0, url.length - 1);
-    return axios.get(`${REVIEWS_URL}${url}`)
-      .then(reviews => {
-        reviews.data.map(getRatingData).forEach(review => {
-          if (review) {
-            let merge = Object.assign(data[review.id], review)
-            recommendedFilms.push(data[review.id]);
-          }
-        });
-        return recommendedFilms;
-      })
+    .catch(err => {
+      throw err
+    });
 }
 
-function getRatingData(filmReviews) {
+function formatReviewData(filmReviews) {
   let id = filmReviews.film_id;
   let reviews = filmReviews.reviews.length;
   if (reviews <= 4) {
