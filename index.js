@@ -7,7 +7,7 @@ const sqlite = require('sqlite'),
 
 const { PORT=3000, NODE_ENV='development', DB_PATH='./db/database.db' } = process.env;
 //SETUP DB
-const sequelize = new Sequelize('films', 'root', 'root', {
+const SEQUELIZE = new Sequelize('films', 'root', 'root', {
   host: 'localhost',
   dialect: 'sqlite',
   operatorsAliases: false,
@@ -18,7 +18,7 @@ const sequelize = new Sequelize('films', 'root', 'root', {
     idle: 10000
   },
   storage: DB_PATH
-})
+});
 
 
 //third party url
@@ -30,7 +30,7 @@ Promise.resolve()
   .then(() => app.listen(PORT, () => console.log(`App listening on port ${PORT}`)))
   .catch((err) => { if (NODE_ENV === 'development') console.error(err.stack); });
 
-sequelize.authenticate().then(() => console.log("Successfully connected"));
+SEQUELIZE.authenticate().then(() => console.log("Successfully connected"));
 
 // ROUTES
 app.get('/films/:id/recommendations', getFilmRecommendations);
@@ -38,12 +38,12 @@ app.use(handleRouteError);
 
 // ROUTE HANDLER
 function getFilmRecommendations(req, res, next) {
-  let filmId = req.params.id;
-  let limit = req.query.limit || 10;
-  let offset = req.query.offset || 0;
-  getFilmDetailsQuery(filmId)
-    .then(films => filterFilmsByReleaseDate(films, limit, offset))
-    .then(result => res.status(200).json({recommendations: result, meta: { limit, offset }}))
+  const FILM_ID = req.params.id;
+  const LIMIT = req.query.limit || 10;
+  const OFFSET = req.query.offset || 0;
+  getFilmDetailsQuery(FILM_ID)
+    .then(films => filterFilmsByReleaseDate(films, LIMIT, OFFSET))
+    .then(result => res.status(200).json({recommendations: result, meta: { limit: LIMIT, offset: OFFSET }}))
     .catch(err => {
       res.errorStatus = 422;
       next()
@@ -51,8 +51,8 @@ function getFilmRecommendations(req, res, next) {
 }
 
 function handleRouteError(req, res, next) {
-  let errorStatus = res.errorStatus || 404;
-  res.status(errorStatus).send({ message: '"message" key missing' });
+  const ERROR_STATUS = res.errorStatus || 404;
+  res.status(ERROR_STATUS).send({ message: '"message" key missing' });
 }
 
 function filterFilmsByReleaseDate(data, limit, offset) {
@@ -65,14 +65,14 @@ function filterFilmsByReleaseDate(data, limit, offset) {
 }
 
 function getFilmDetailsQuery(id) {
-  return sequelize
+  return SEQUELIZE
     .query(
       `SELECT strftime(release_date) + 0 as release_date, genre_id, genres.name
       FROM films INNER JOIN genres ON films.genre_id = genres.id WHERE films.id = :id`,
       {
         raw: true,
         replacements: { id: id },
-        type: sequelize.QueryTypes.SELECT
+        type: SEQUELIZE.QueryTypes.SELECT
       }
     )
     .then(genre => genre[0])
@@ -82,7 +82,7 @@ function getFilmDetailsQuery(id) {
 }
 
 function getByReleaseDateQuery(film) {
-  return sequelize
+  return SEQUELIZE
     .query(
       `SELECT films.id, title, release_date as releaseDate
       FROM films WHERE genre_id = :genreId
@@ -94,7 +94,7 @@ function getByReleaseDateQuery(film) {
           genreId: film.genre_id,
           releaseDate: film.release_date
         },
-        type: sequelize.QueryTypes.SELECT
+        type: SEQUELIZE.QueryTypes.SELECT
       }
     )
     .catch(err => {
@@ -111,14 +111,14 @@ function getFilmReviews(films, genre) {
     url += `${film.id.toString()},`;
     data[film.id] = film;
     data[film.id]['genre'] = name;
-  })
+  });
   url = url.substring(0, url.length - 1);
   return axios
     .get(`${REVIEWS_URL}${url}`)
     .then(reviews => {
       reviews.data.map(formatReviewData).forEach(review => {
         if (review) {
-          let merge = Object.assign(data[review.id], review)
+          Object.assign(data[review.id], review)
           recommendedFilms.push(data[review.id]);
         }
       });
